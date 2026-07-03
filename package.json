@@ -1,0 +1,20 @@
+{
+  "name": "amana-escrow",
+  "version": "1.0.0",
+  "description": "Amana - Escrow payments for Instagram & Twitter vendors in Nigeria, powered by Nomba",
+  "main": "server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "nanoid": "^3.3.7"
+  }
+}

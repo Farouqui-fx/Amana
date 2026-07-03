@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amana — Order</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a href="index.html" class="brand">
+      <span class="brand-mark">Amana</span>
+      <span class="brand-gloss">/ə-MAH-nah/ — trust, a thing kept safe</span>
+    </a>
+  </div>
+</header>
+
+<main class="wrap">
+  <section style="padding: 48px 0;">
+    <div class="card order-page-card" id="order-card">
+      Loading order…
+    </div>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">Your payment is held by Amana's escrow logic until you confirm the order arrived. Powered by Nomba.</div>
+</footer>
+
+<script src="js/app.js"></script>
+<script>
+  const params = new URLSearchParams(location.search);
+  const orderId = params.get("id");
+  let pollTimer = null;
+
+  const LOCK_ICONS = {
+    created: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d65f4c" stroke-width="1.6"><path d="M6 9V7a6 6 0 0112 0v2M4 9h16v11H4z"/></svg>`,
+    awaiting_payment: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#d65f4c" stroke-width="1.6"><path d="M6 9V7a6 6 0 0112 0v2M4 9h16v11H4z"/></svg>`,
+    held_in_escrow: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#c98a26" stroke-width="1.6"><path d="M6 9V7a6 6 0 0112 0v2M4 9h16v11H4z"/></svg>`,
+    released: `<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2f7a52" stroke-width="1.6"><path d="M8 9V7a4 4 0 018 0M4 9h16v11H4z"/></svg>`,
+  };
+
+  function render(order) {
+    const card = document.getElementById("order-card");
+    let actionHtml = "";
+
+    if (order.status === "created" || order.status === "awaiting_payment") {
+      actionHtml = `
+        <button class="btn-gold btn-block" id="pay-btn">Pay ${formatNaira(order.price)} now</button>
+        <button class="demo-link" id="simulate-btn">Testing without live payment? Simulate payment confirmation</button>
+      `;
+    } else if (order.status === "held_in_escrow") {
+      actionHtml = `
+        <div class="notice notice-info">Your payment is safely held. Let the seller know once your item arrives — releasing funds early can't be undone.</div>
+        <button class="btn-primary btn-block" id="confirm-btn" style="margin-top:14px;">I received my order — release payment</button>
+      `;
+    } else if (order.status === "released") {
+      actionHtml = `<div class="notice notice-info" style="background:var(--green-soft); color:var(--green);">Done — ${order.sellerName || "the seller"} has been paid. Thanks for using Amana.</div>`;
+    }
+
+    card.innerHTML = `
+      <div class="seal state-${order.status}">${LOCK_ICONS[order.status] || ""}</div>
+      <div class="order-amount">${formatNaira(order.price)}</div>
+      <div class="order-product">${order.productName}${order.sellerHandle ? " · " + order.sellerHandle : ""}</div>
+      <div class="status-label">${statusLabel(order.status)}</div>
+      <div id="action-area">${actionHtml}</div>
+      <div id="order-error"></div>
+      ${order.transactionRef ? `<div class="tx-ref">Ref: ${order.transactionRef}</div>` : ""}
+    `;
+
+    const payBtn = document.getElementById("pay-btn");
+    if (payBtn) payBtn.addEventListener("click", () => handlePay(order));
+
+    const simBtn = document.getElementById("simulate-btn");
+    if (simBtn) simBtn.addEventListener("click", () => handleSimulate(order));
+
+    const confirmBtn = document.getElementById("confirm-btn");
+    if (confirmBtn) confirmBtn.addEventListener("click", () => handleConfirm(order));
+  }
+
+  function showError(msg) {
+    document.getElementById("order-error").innerHTML = `<div class="notice notice-error">${msg}</div>`;
+  }
+
+  async function handlePay(order) {
+    try {
+      const updated = await apiFetch(`/orders/${order.id}/pay`, { method: "POST" });
+      if (updated.checkoutLink) {
+        window.location.href = updated.checkoutLink;
+      } else {
+        render(updated);
+      }
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  async function handleSimulate(order) {
+    try {
+      const updated = await apiFetch(`/orders/${order.id}/simulate-payment`, { method: "POST" });
+      render(updated);
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  async function handleConfirm(order) {
+    try {
+      const updated = await apiFetch(`/orders/${order.id}/confirm-delivery`, { method: "POST" });
+      render(updated);
+    } catch (err) {
+      showError(err.message);
+    }
+  }
+
+  async function loadOrder() {
+    try {
+      const order = await apiFetch(`/orders/${orderId}`);
+      render(order);
+    } catch (err) {
+      document.getElementById("order-card").innerHTML = `<div class="notice notice-error">${err.message}</div>`;
+    }
+  }
+
+  if (!orderId) {
+    document.getElementById("order-card").innerHTML = `<div class="notice notice-error">No order specified.</div>`;
+  } else {
+    loadOrder();
+    // Poll so the buyer sees the status flip to "held in escrow" the moment
+    // the Nomba webhook confirms payment, without needing to refresh.
+    pollTimer = setInterval(loadOrder, 4000);
+  }
+</script>
+
+</body>
+</html>

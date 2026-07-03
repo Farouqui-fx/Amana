@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Amana — Escrow for social commerce</title>
+<link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<header class="site-header">
+  <div class="wrap">
+    <a href="index.html" class="brand">
+      <span class="brand-mark">Amana</span>
+      <span class="brand-gloss">/ə-MAH-nah/ — trust, a thing kept safe</span>
+    </a>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero">
+    <h1>Sell on Instagram and Twitter without the fear.</h1>
+    <p>Amana holds the buyer's money the moment they pay, and only releases it to you once they confirm the order arrived. No more "send money first," no more "I sent it, where's my item."</p>
+    <p style="font-family:var(--font-mono); font-size:0.8rem; color:#8a8f9c;">Powered by Nomba's payments &amp; webhook infrastructure.</p>
+
+    <div class="lifecycle">
+      <div class="lifecycle-step">
+        <div class="seal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#1b2a4a" stroke-width="1.6"><path d="M6 9V7a6 6 0 0112 0v2M4 9h16v11H4z"/></svg>
+        </div>
+        <h3>1. Buyer pays</h3>
+        <p>Checkout link, card or transfer.</p>
+      </div>
+      <div class="lifecycle-step">
+        <div class="seal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c98a26" stroke-width="1.6"><path d="M4 6l8 6 8-6M4 6h16v12H4z"/></svg>
+        </div>
+        <h3>2. Nomba confirms</h3>
+        <p>A webhook fires instantly.</p>
+      </div>
+      <div class="lifecycle-step">
+        <div class="seal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#c98a26" stroke-width="1.6"><path d="M6 9V7a6 6 0 0112 0v2M4 9h16v11H4z"/></svg>
+        </div>
+        <h3>3. Held in escrow</h3>
+        <p>Seller ships the item.</p>
+      </div>
+      <div class="lifecycle-step">
+        <div class="seal-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#2f7a52" stroke-width="1.6"><path d="M8 9V7a4 4 0 018 0M4 9h16v11H4z"/></svg>
+        </div>
+        <h3>4. Released</h3>
+        <p>Buyer confirms, seller is paid.</p>
+      </div>
+    </div>
+  </section>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="create">Create an order</button>
+    <button class="tab-btn" data-tab="dashboard">My orders</button>
+  </nav>
+
+  <section id="tab-create" class="tab-panel active">
+    <div class="card">
+      <form id="order-form">
+        <div class="field">
+          <label for="productName">What are you selling?</label>
+          <input id="productName" required placeholder="e.g. Ankara two-piece set" />
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="price">Price (NGN)</label>
+            <input id="price" type="number" min="100" required placeholder="15000" />
+          </div>
+          <div class="field">
+            <label for="buyerEmail">Buyer's email (optional)</label>
+            <input id="buyerEmail" type="email" placeholder="buyer@example.com" />
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="sellerName">Your name / brand</label>
+            <input id="sellerName" placeholder="e.g. Styleverse Designs" />
+          </div>
+          <div class="field">
+            <label for="sellerHandle">IG / X handle</label>
+            <input id="sellerHandle" placeholder="@yourhandle" />
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="sellerBankAccount">Your bank account number</label>
+            <input id="sellerBankAccount" required placeholder="0123456789" />
+          </div>
+          <div class="field">
+            <label for="sellerBankCode">Bank code</label>
+            <input id="sellerBankCode" required placeholder="e.g. 058" />
+          </div>
+        </div>
+        <p class="hint">This is where Amana pays you once the buyer confirms delivery. Find your bank's code from the <code>/api/banks</code> list.</p>
+
+        <button type="submit" class="btn-gold btn-block">Generate escrow order link</button>
+      </form>
+
+      <div id="create-result" style="display:none; margin-top:22px;">
+        <div class="notice notice-info">
+          Share this link with your buyer on Instagram or Twitter:
+          <div style="margin-top:8px; font-family:var(--font-mono); font-size:0.85rem; word-break:break-all;" id="share-link"></div>
+        </div>
+        <a class="btn btn-primary" style="margin-top:14px;" id="open-order-link" target="_blank">Open order page</a>
+      </div>
+
+      <div id="create-error" class="notice notice-error" style="display:none;"></div>
+    </div>
+  </section>
+
+  <section id="tab-dashboard" class="tab-panel">
+    <div class="card" id="dashboard-card">
+      <div id="orders-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">Amana — a hackathon project for the Nomba Challenge. Escrow logic runs on your own server; no funds pass through Amana itself.</div>
+</footer>
+
+<script src="js/app.js"></script>
+<script>
+  // Tabs
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+      if (btn.dataset.tab === "dashboard") loadDashboard();
+    });
+  });
+
+  // Create order form
+  document.getElementById("order-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const errorEl = document.getElementById("create-error");
+    const resultEl = document.getElementById("create-result");
+    errorEl.style.display = "none";
+    resultEl.style.display = "none";
+
+    const body = {
+      productName: document.getElementById("productName").value,
+      price: document.getElementById("price").value,
+      buyerEmail: document.getElementById("buyerEmail").value,
+      sellerName: document.getElementById("sellerName").value,
+      sellerHandle: document.getElementById("sellerHandle").value,
+      sellerBankAccount: document.getElementById("sellerBankAccount").value,
+      sellerBankCode: document.getElementById("sellerBankCode").value,
+    };
+
+    try {
+      const order = await apiFetch("/orders", { method: "POST", body: JSON.stringify(body) });
+      document.getElementById("share-link").textContent = order.shareLink;
+      document.getElementById("open-order-link").href = order.shareLink;
+      resultEl.style.display = "block";
+      document.getElementById("order-form").reset();
+    } catch (err) {
+      errorEl.textContent = err.message;
+      errorEl.style.display = "block";
+    }
+  });
+
+  async function loadDashboard() {
+    const listEl = document.getElementById("orders-list");
+    listEl.innerHTML = "Loading…";
+    try {
+      const orders = await apiFetch("/orders");
+      if (!orders.length) {
+        listEl.innerHTML = `<div class="empty-state">No orders yet. Create one from the "Create an order" tab.</div>`;
+        return;
+      }
+      listEl.innerHTML = orders.map((o) => `
+        <div class="order-row">
+          <div>
+            <div class="order-title">${o.productName}</div>
+            <div class="order-meta">${o.orderReference} · ${formatNaira(o.price)}</div>
+          </div>
+          <span class="badge badge-${o.status}">${statusLabel(o.status)}</span>
+        </div>
+      `).join("");
+    } catch (err) {
+      listEl.innerHTML = `<div class="notice notice-error">${err.message}</div>`;
+    }
+  }
+</script>
+
+</body>
+</html>
