@@ -50,6 +50,23 @@ amana/
    ```
    Visit `http://localhost:4000` — the Express server serves both the API and the frontend.
 
+## Deploying (Render)
+
+Render's free web service tier has an ephemeral filesystem — anything written to disk (like the local JSON order store) is wiped on every restart or redeploy. To keep demo data around:
+
+1. In Render, create a **free Postgres instance** (Dashboard → New + → PostgreSQL). Copy its "Internal Database URL."
+2. On your Web Service, add an environment variable `DATABASE_URL` set to that connection string.
+3. That's it — the backend detects `DATABASE_URL` automatically and switches from the JSON file store to Postgres, creating its `orders` table on first boot. No code changes needed.
+4. Also set `PUBLIC_BASE_URL` and `FRONTEND_BASE_URL` to your Render URL (e.g. `https://amana-escrow.onrender.com`), and register `<that-url>/api/webhook/nomba` in the Nomba dashboard as your webhook endpoint.
+
+Check `GET /api/health` after deploying — it reports which store is active and whether it's actually reachable, e.g.:
+```json
+{ "ok": true, "service": "amana-escrow", "store": "postgres", "storeConnected": true }
+```
+If `store` says `"file"` on Render, `DATABASE_URL` isn't set correctly — your data won't survive the next redeploy.
+
+Without `DATABASE_URL` set, everything still runs fine locally against the JSON file in `backend/data/orders.json`.
+
 ## Demo flow (for judges, without needing a live bank transfer)
 
 Every order page has a **"Simulate payment confirmation"** link. It flips the order straight to `held_in_escrow` without waiting for a real webhook — useful if your demo environment can't expose a public webhook URL live on stage. The rest of the flow (confirm delivery → payout call) still goes through the real Nomba transfer API, so the escrow-release step is genuinely demonstrated end to end.
@@ -58,11 +75,21 @@ For the full real flow: create an order → open the share link → pay with a N
 
 ## Notes on the Nomba integration
 
-A few implementation details were built against Nomba's public docs but are worth double-checking against your live dashboard/sandbox before a real demo, since some fields weren't fully documented in what I could pull:
+Verified directly against Nomba's published API reference:
 
-- **`initiateBankTransfer`** (`src/nombaClient.js`) posts to `POST /v2/transfers/bank` with `amount`, `accountNumber`, `bankCode`, `merchantTxRef`, `narration`. Confirm exact field names against the API reference — the transfer endpoint's full request schema wasn't fully visible when this was built.
-- **Webhook signature verification** (`src/utils/verifySignature.js`) implements Nomba's documented HMAC-SHA256 scheme (colon-joined payload fields + timestamp), but the exact header names Nomba sends the signature and timestamp in weren't confirmed. It currently reads `signature` and `timestamp` headers — log `req.headers` from a real webhook hit and adjust `SIGNATURE_HEADER`/`TIMESTAMP_HEADER` if they differ. Verification currently fails open (logs a warning, still processes) so a header mismatch doesn't block your demo — tighten this to fail closed before handling real money.
-- **Matching a webhook back to an order** (`extractOrderReference` in `src/routes/webhook.js`) checks a few likely payload locations for the order reference. Log one real `payment_success` payload for a checkout order and confirm which field it actually lands in.
+- **Auth** (`POST /v1/auth/token/issue`) — response shape is `{ data: { access_token, refresh_token, expiresAt } }`, where `expiresAt` is an ISO timestamp (not a seconds-based expiry). The client parses this correctly and caches the token until ~30s before it expires.
+- **Checkout order creation** (`POST /v1/checkout/order`) — the `order` object shape (`orderReference`, `callbackUrl`, `customerEmail`, `amount`, `currency`, `accountId`, `allowedPaymentMethods`, `orderMetaData`) matches Nomba's sample requests exactly.
+- **Bank transfer payout** (`POST /v2/transfers/bank`) — Nomba requires `accountName` in addition to `accountNumber` and `bankCode`, which the original build missed. `confirm-delivery` now calls the bank lookup endpoint first to resolve the seller's `accountName` before releasing funds. Requests also include an `X-Idempotent-key` header (Nomba's documented recommendation for transfer calls), so a retried request after a dropped connection can't double-pay a seller.
+- **Webhook signature verification** — confirmed against Nomba's official docs (`developer.nomba.com/docs/api-basics/webhook`). Headers are `nomba-signature` and `nomba-timestamp` (not the generic names originally guessed), and the signature is **base64-encoded** HMAC-SHA256 (not hex, which the original build used). Both are now fixed in `verifySignature.js`. The formula itself — colon-joined `event_type:requestId:merchant.userId:merchant.walletId:transaction.transactionId:transaction.type:transaction.time:transaction.responseCode:timestamp` — was correct from the start. The webhook route now **fails closed**: if `NOMBA_SIGNATURE_KEY` is set and a signature doesn't verify, the request is rejected with 401 rather than processed anyway.
+
+One real gap, worth understanding before you demo:
+
+- **Matching a webhook back to an order.** Nomba's own documented sample payload for `payment_success` is for a virtual-account transfer (`transaction.type: "vact_transfer"`) and has no explicit `orderReference` field — it carries `aliasAccountReference`/`aliasAccountNumber` instead. Amana's checkout flow may surface the reference under a different field for card/PayByTransfer payments, but that exact shape wasn't visible in what the docs returned. `extractOrderReference` in `routes/webhook.js` checks the most likely field names, and as a safety net, `matchByAmountFallback` will match the most recent `awaiting_payment` order with the same amount if no explicit reference is found — a heuristic, not a guarantee, that keeps a real payment from silently vanishing mid-demo. **Log one real webhook payload from a checkout order payment** (the code already logs the full body) and confirm which field actually carries your reference, then tighten `extractOrderReference` accordingly.
+- Nomba retries failed webhook deliveries (non-2xx response) up to 5 times with exponential backoff over roughly an hour — so a brief server hiccup during judging won't lose the event, it'll just arrive a couple minutes late.
+
+## Testing without real money
+
+Nomba's sandbox (`https://sandbox.nomba.com`) accepts requests with **no auth headers at all** — no bearer token, no `accountId`. Set `NOMBA_BASE_URL=https://sandbox.nomba.com` in your `.env` to hit it directly while you build, which is much faster than wiring up full OAuth first. Switch back to `https://api.nomba.com` (or just unset the variable) for the real demo.
 
 ## Pitching it
 
